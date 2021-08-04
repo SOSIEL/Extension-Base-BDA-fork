@@ -5,11 +5,11 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.Diagnostics;
+using System.Linq;
 using Landis.Core;
 using Landis.Library.Metadata;
 using Landis.SpatialModeling;
-using System.Data;
 
 namespace Landis.Extension.BaseBDA
 {
@@ -33,12 +33,14 @@ namespace Landis.Extension.BaseBDA
         private static IInputParameters parameters;
         private static ICore modelCore;
         private bool reinitialized;
+        private readonly List<string> eventLogExtraColumns;
 
         //---------------------------------------------------------------------
 
         public PlugIn()
             : base(ExtensionName, type)
         {
+            eventLogExtraColumns = new List<string>();
         }
 
         //---------------------------------------------------------------------
@@ -47,7 +49,6 @@ namespace Landis.Extension.BaseBDA
                                             ICore mCore)
         {
             modelCore = mCore;
-            InputParameterParser.EcoregionsDataset = modelCore.Ecoregions;
             InputParameterParser parser = new InputParameterParser();
             parameters = Landis.Data.Load<IInputParameters>(dataFile, parser);
         }
@@ -71,6 +72,14 @@ namespace Landis.Extension.BaseBDA
         public override void Initialize()
         {
             reinitialized = false;
+
+            if (parameters.SelectedManagementAreas != null)
+            {
+                eventLogExtraColumns.AddRange(
+                    parameters.SelectedManagementAreas.Select(mapCode => mapCode.ToString()));
+            }
+            ExtensionMetadata.ColumnNames = new List<string>(eventLogExtraColumns);
+
             MetadataHandler.InitializeMetadata(parameters.Timestep,
                parameters.MapNamesTemplate,
                parameters.SRDMapNames,
@@ -91,50 +100,53 @@ namespace Landis.Extension.BaseBDA
             foreach (IAgent activeAgent in manyAgentParameters)
             {
                 if (activeAgent == null)
-                    PlugIn.ModelCore.UI.WriteLine("Agent Parameters NOT loading correctly.");
+                    ModelCore.UI.WriteLine("Agent Parameters NOT loading correctly.");
                 activeAgent.TimeToNextEpidemic = TimeToNext(activeAgent, Timestep) + activeAgent.StartYear;
-                int timeOfNext = PlugIn.ModelCore.CurrentTime + activeAgent.TimeToNextEpidemic - activeAgent.TimeSinceLastEpidemic;
+                int timeOfNext = ModelCore.CurrentTime
+                    + activeAgent.TimeToNextEpidemic
+                    - activeAgent.TimeSinceLastEpidemic;
                 if (timeOfNext < Timestep)
                     timeOfNext = Timestep;
                 if (timeOfNext < activeAgent.StartYear)
                     timeOfNext = activeAgent.StartYear;
                 SiteVars.TimeOfNext.ActiveSiteValues = timeOfNext;
 
-                int i = 0;
-
-                activeAgent.DispersalNeighbors
-                    = GetDispersalNeighborhood(activeAgent, Timestep);
+                activeAgent.DispersalNeighbors = GetDispersalNeighborhood(activeAgent, Timestep);
                 if (activeAgent.DispersalNeighbors != null)
                 {
-                    foreach (RelativeLocation reloc in activeAgent.DispersalNeighbors) i++;
-                    PlugIn.ModelCore.UI.WriteLine("Dispersal Neighborhood = {0} neighbors.", i);
+                    ModelCore.UI.WriteLine("Dispersal Neighborhood = {0} neighbors.",
+                        activeAgent.DispersalNeighbors.Count());
                 }
 
-                i = 0;
                 activeAgent.ResourceNeighbors = GetResourceNeighborhood(activeAgent);
                 if (activeAgent.ResourceNeighbors != null)
                 {
-                    foreach (RelativeLocationWeighted reloc in activeAgent.ResourceNeighbors) i++;
-                    PlugIn.ModelCore.UI.WriteLine("Resource Neighborhood = {0} neighbors.", i);
+                    ModelCore.UI.WriteLine("Resource Neighborhood = {0} neighbors.",
+                        activeAgent.ResourceNeighbors.Count());
                 }
-
             }
 
-
-
             //string logFileName = parameters.LogFileName;
-            //PlugIn.ModelCore.UI.WriteLine("Opening BDA log file \"{0}\" ...", logFileName);
-            //log = PlugIn.ModelCore.CreateTextFile(logFileName);
+            //ModelCore.UI.WriteLine("Opening BDA log file \"{0}\" ...", logFileName);
+            //log = ModelCore.CreateTextFile(logFileName);
             //log.AutoFlush = true;
             //log.Write("CurrentTime, ROS, AgentName, NumCohortsKilled, NumSitesDamaged, MeanSeverity");
             //log.WriteLine("");
-
         }
 
         public override void InitializePhase2()
         {
-                SiteVars.InitializeTimeOfLastDisturbances();
-                reinitialized = true;
+            SiteVars.InitializeExternalVars();
+
+            if (parameters.SelectedManagementAreas != null && SiteVars.ManagementArea == null)
+            {
+                throw new ApplicationException("BaseBDA: OutputKilledBiomassByManagementArea specified," +
+                    " but required management area information is not available. Please make sure that you have" +
+                    " proper version of the Biomass Harvest extension abd it is active"
+                    );
+            }
+
+            reinitialized = true;
         }
 
         //---------------------------------------------------------------------
@@ -143,7 +155,7 @@ namespace Landis.Extension.BaseBDA
         ///</summary>
         public override void Run()
         {
-            PlugIn.ModelCore.UI.WriteLine("   Processing landscape for BDA events ...");
+            ModelCore.UI.WriteLine("   Processing landscape for BDA events ...");
             if(!reinitialized)
                 InitializePhase2();
 
@@ -161,26 +173,24 @@ namespace Landis.Extension.BaseBDA
                 if(ROS > 0)
                 {
                     Epidemic.Initialize(activeAgent);
-                    Epidemic currentEpic = Epidemic.Simulate(activeAgent,
-                        PlugIn.ModelCore.CurrentTime,
-                        Timestep,
-                        ROS);
+                    Epidemic currentEpic = Epidemic.Simulate(
+                        activeAgent, Timestep, ROS, parameters.SelectedManagementAreas);
                     //activeAgent.TimeSinceLastEpidemic = activeAgent.TimeSinceLastEpidemic + Timestep;
 
                     if (currentEpic != null)
                     {
-                        LogEvent(PlugIn.ModelCore.CurrentTime, currentEpic, ROS, activeAgent);
+                        LogEvent(ModelCore.CurrentTime, currentEpic, ROS, activeAgent);
 
                         {
                             //----- Write BDA severity maps --------
-                            string path = MapNames.ReplaceTemplateVars(mapNameTemplate, activeAgent.AgentName, PlugIn.ModelCore.CurrentTime);
-                            //IOutputRaster<SeverityPixel> map = CreateMap(PlugIn.ModelCore.CurrentTime, activeAgent.AgentName);
+                            string path = MapNames.ReplaceTemplateVars(mapNameTemplate, activeAgent.AgentName, ModelCore.CurrentTime);
+                            //IOutputRaster<SeverityPixel> map = CreateMap(ModelCore.CurrentTime, activeAgent.AgentName);
                             //using (map) {
                             //    SeverityPixel pixel = new SeverityPixel();
                             using (IOutputRaster<ShortPixel> outputRaster = modelCore.CreateRaster<ShortPixel>(path, modelCore.Landscape.Dimensions))
                             {
                                 ShortPixel pixel = outputRaster.BufferPixel;
-                                foreach (Site site in PlugIn.ModelCore.Landscape.AllSites)
+                                foreach (Site site in ModelCore.Landscape.AllSites)
                                 {
                                     if (site.IsActive)
                                     {
@@ -198,18 +208,19 @@ namespace Landis.Extension.BaseBDA
                                 }
                             }
                         }
+
                         if (!(srdMapNames == null))
                         {
                             //----- Write BDA SRD maps --------
-                            string path2 = MapNames.ReplaceTemplateVars(srdMapNames, activeAgent.AgentName, PlugIn.ModelCore.CurrentTime);
+                            string path2 = MapNames.ReplaceTemplateVars(srdMapNames, activeAgent.AgentName, ModelCore.CurrentTime);
                             using (IOutputRaster<ShortPixel> outputRaster = modelCore.CreateRaster<ShortPixel>(path2, modelCore.Landscape.Dimensions))
                             {
                                 ShortPixel pixel = outputRaster.BufferPixel;
-                                foreach (Site site in PlugIn.ModelCore.Landscape.AllSites)
+                                foreach (Site site in ModelCore.Landscape.AllSites)
                                 {
                                     if (site.IsActive)
                                     {
-                                        pixel.MapCode.Value = (short) System.Math.Round(SiteVars.SiteResourceDom[site] * 100.00);
+                                        pixel.MapCode.Value = (short) Math.Round(SiteVars.SiteResourceDom[site] * 100.00);
                                     }
                                     else
                                     {
@@ -220,19 +231,20 @@ namespace Landis.Extension.BaseBDA
                                 }
                             }
                         }
+
                         if (!(nrdMapNames == null))
                         {
                             //----- Write BDA NRD maps --------
-                            string path3 = MapNames.ReplaceTemplateVars(nrdMapNames, activeAgent.AgentName, PlugIn.ModelCore.CurrentTime);
+                            string path3 = MapNames.ReplaceTemplateVars(nrdMapNames, activeAgent.AgentName,ModelCore.CurrentTime);
                             using (IOutputRaster<ShortPixel> outputRaster = modelCore.CreateRaster<ShortPixel>(path3, modelCore.Landscape.Dimensions))
                             {
                                 ShortPixel pixel = outputRaster.BufferPixel;
 
-                                foreach (Site site in PlugIn.ModelCore.Landscape.AllSites)
+                                foreach (Site site in ModelCore.Landscape.AllSites)
                                 {
                                     if (site.IsActive)
                                     {
-                                        pixel.MapCode.Value = (short)System.Math.Round(SiteVars.NeighborResourceDom[site] * 100.00);
+                                        pixel.MapCode.Value = (short)Math.Round(SiteVars.NeighborResourceDom[site] * 100.00);
                                     }
                                     else
                                     {
@@ -243,19 +255,20 @@ namespace Landis.Extension.BaseBDA
                                 }
                             }
                         }
+
                         if (!(vulnMapNames == null))
                         {
                             //----- Write BDA Vulnerability maps --------
-                            string path4 = MapNames.ReplaceTemplateVars(vulnMapNames, activeAgent.AgentName, PlugIn.ModelCore.CurrentTime);
+                            string path4 = MapNames.ReplaceTemplateVars(vulnMapNames, activeAgent.AgentName, ModelCore.CurrentTime);
                             using (IOutputRaster<ShortPixel> outputRaster = modelCore.CreateRaster<ShortPixel>(path4, modelCore.Landscape.Dimensions))
                             {
                                 ShortPixel pixel = outputRaster.BufferPixel;
 
-                                foreach (Site site in PlugIn.ModelCore.Landscape.AllSites)
+                                foreach (Site site in ModelCore.Landscape.AllSites)
                                 {
                                     if (site.IsActive)
                                     {
-                                        pixel.MapCode.Value = (short)System.Math.Round(SiteVars.Vulnerability[site] * 100.00);
+                                        pixel.MapCode.Value = (short)Math.Round(SiteVars.Vulnerability[site] * 100.00);
                                     }
                                     else
                                     {
@@ -289,11 +302,12 @@ namespace Landis.Extension.BaseBDA
         }
         */
         //---------------------------------------------------------------------
+
         private void LogEvent(int currentTime,
                               Epidemic CurrentEvent,
                               int ROS, IAgent agent)
         {
-
+            ModelCore.UI.WriteLine("   Writing log.");
             EventLog.Clear();
             EventsLog el = new EventsLog();
             el.Time = currentTime;
@@ -302,28 +316,35 @@ namespace Landis.Extension.BaseBDA
             el.DamagedSites = CurrentEvent.TotalSitesDamaged;
             el.CohortsKilled = CurrentEvent.CohortsKilled;
             el.MeanSeverity = CurrentEvent.MeanSeverity;
+            el.TotalBiomassKilled = CurrentEvent.TotalBiomassKilled;
+            el.DamagedSitesInMA = CurrentEvent.TotalSitesDamagedInSelectedManagementAreas.Select(v => (double)v).ToArray();
+            el.CohortsKilledInMA = CurrentEvent.CohortsKilledInSelectedManagementAreas.Select(v => (double)v).ToArray();
+            el.TotalBiomassKilledInMA = CurrentEvent.TotalBiomassKilledInSelectedManagementAreas.Select(v => (double)v).ToArray();
+            //ExtensionMetadata.ColumnNames = new List<string>(eventLogExtraColumns);
             EventLog.AddObject(el);
+            //Debugger.Launch();
             EventLog.WriteToFile();
         }
+
         //---------------------------------------------------------------------
         /*private IOutputRaster<ShortPixel> CreateMap(int currentTime, string agentName)
         {
             string path = MapNames.ReplaceTemplateVars(mapNameTemplate, agentName, currentTime);
-            PlugIn.ModelCore.Log.WriteLine("   Writing BDA severity map to {0} ...", path);
+            ModelCore.Log.WriteLine("   Writing BDA severity map to {0} ...", path);
             return PlugIn.modelCore.CreateRaster<ShortPixel>(path, PlugIn.modelCore.Landscape.Dimensions);
         }*/
 
         /*private IOutputRaster<ShortPixel> CreateSRDMap(int currentTime, string agentName)
         {
             string path = MapNames.ReplaceTemplateVars(srdMapNames, agentName, currentTime);
-            PlugIn.ModelCore.Log.WriteLine("   Writing BDA SRD map to {0} ...", path);
+            ModelCore.Log.WriteLine("   Writing BDA SRD map to {0} ...", path);
             return PlugIn.modelCore.CreateRaster<ShortPixel>(path, PlugIn.modelCore.Landscape.Dimensions);
         }*/
 
         /*private IOutputRaster<ShortPixel> CreateNRDMap(int currentTime, string agentName)
         {
             string path = MapNames.ReplaceTemplateVars(nrdMapNames, agentName, currentTime);
-            PlugIn.ModelCore.Log.WriteLine("   Writing BDA NRD map to {0} ...", path);
+            ModelCore.Log.WriteLine("   Writing BDA NRD map to {0} ...", path);
             return PlugIn.modelCore.CreateRaster<ShortPixel>(path, PlugIn.modelCore.Landscape.Dimensions);
         }*/
         //---------------------------------------------------------------------
@@ -334,19 +355,20 @@ namespace Landis.Extension.BaseBDA
             {
                 int MaxI = (int)Math.Round(activeAgent.MaxInterval);
                 int MinI = (int)Math.Round(activeAgent.MinInterval);
-                double randNum = PlugIn.ModelCore.GenerateUniform();
+                double randNum = ModelCore.GenerateUniform();
                 timeToNext = (MinI) + (int)(randNum * (MaxI - MinI));
             }
             else if (activeAgent.RandFunc == OutbreakPattern.CyclicNormal)
             {
                 int randNum = (int)activeAgent.NormMean;
-                if (!(activeAgent.NormStDev == 0))
+                if (activeAgent.NormStDev != 0)
                 {
-                    PlugIn.ModelCore.NormalDistribution.Mu = activeAgent.NormMean;
-                    PlugIn.ModelCore.NormalDistribution.Sigma = activeAgent.NormStDev;
-
-                    randNum = (int)PlugIn.ModelCore.NormalDistribution.NextDouble();
-                    randNum = (int)PlugIn.ModelCore.NormalDistribution.NextDouble();
+                    //ModelCore.UI.WriteLine(
+                    //    $"Agent '{activeAgent.AgentName}': NormMean={activeAgent.NormMean} NormStDev={activeAgent.NormStDev}");
+                    ModelCore.NormalDistribution.Mu = activeAgent.NormMean;
+                    ModelCore.NormalDistribution.Sigma = activeAgent.NormStDev;
+                    randNum = (int)ModelCore.NormalDistribution.NextDouble();
+                    randNum = (int)ModelCore.NormalDistribution.NextDouble();
                 }
                 timeToNext = randNum;
 
@@ -368,7 +390,6 @@ namespace Landis.Extension.BaseBDA
         {
             int ROS = 0;
             bool activeOutbreak = false;
-
 
             if (activeAgent.TimeToNextEpidemic <= activeAgent.TimeSinceLastEpidemic && ModelCore.CurrentTime <= activeAgent.EndYear)
             {
@@ -392,13 +413,13 @@ namespace Landis.Extension.BaseBDA
                     //      activeAgent.MinROS;
 
                     // Correction suggested by Brian Miranda, March 2008
-                    ROS = (int) (PlugIn.ModelCore.GenerateUniform() *
-                          (double) (activeAgent.MaxROS - activeAgent.MinROS)) + 1 +
+                    ROS = (int) (ModelCore.GenerateUniform() *
+                          (activeAgent.MaxROS - activeAgent.MinROS)) + 1 +
                           activeAgent.MinROS;
-
                 }
-
-            } else  {
+            }
+            else
+            {
                 //activeAgent.TimeSinceLastEpidemic += BDAtimestep;
                 ROS = activeAgent.MinROS;
             }
@@ -415,26 +436,22 @@ namespace Landis.Extension.BaseBDA
 
         private static IEnumerable<RelativeLocationWeighted> GetResourceNeighborhood(IAgent agent)
         {
-            float CellLength = PlugIn.ModelCore.CellLength;
-            PlugIn.ModelCore.UI.WriteLine("Creating Neighborhood List.");
+            float CellLength = ModelCore.CellLength;
+            ModelCore.UI.WriteLine("Creating Neighborhood List.");
             int neighborRadius = agent.NeighborRadius;
             int numCellRadius = (int) ((double) neighborRadius / CellLength) ;
-            PlugIn.ModelCore.UI.WriteLine("NeighborRadius={0}, CellLength={1}, numCellRadius={2}",
+            ModelCore.UI.WriteLine("NeighborRadius={0}, CellLength={1}, numCellRadius={2}",
                         neighborRadius, CellLength, numCellRadius);
-
-            double centroidDistance = 0;
-            double cellLength = CellLength;
-            double neighborWeight = 0;
 
             List<RelativeLocationWeighted> neighborhood = new List<RelativeLocationWeighted>();
 
-            for(int row=(numCellRadius * -1); row<=numCellRadius; row++)
+            for (int row=(numCellRadius * -1); row<=numCellRadius; row++)
             {
-                for(int col=(numCellRadius * -1); col<=numCellRadius; col++)
+                for (int col=(numCellRadius * -1); col<=numCellRadius; col++)
                 {
-                    neighborWeight = 0;
-                    centroidDistance = DistanceFromCenter(row ,col);
-                    //PlugIn.ModelCore.Log.WriteLine("Centroid Distance = {0}.", centroidDistance);
+                    double neighborWeight = 0;
+                    double centroidDistance = DistanceFromCenter(row ,col);
+                    //ModelCore.Log.WriteLine("Centroid Distance = {0}.", centroidDistance);
                     if(centroidDistance  <= neighborRadius && centroidDistance > 0)
                     {
 
@@ -448,10 +465,8 @@ namespace Landis.Extension.BaseBDA
                         if(agent.ShapeOfNeighbor == NeighborShape.gaussian)
                         {
                             double halfRadius = neighborRadius / 2;
-                                neighborWeight = (float)
-                                System.Math.Exp(-1 *
-                                System.Math.Pow(centroidDistance, 2) /
-                                System.Math.Pow(halfRadius, 2));
+                            neighborWeight = (float)
+                                Math.Exp(-1 * Math.Pow(centroidDistance, 2) / Math.Pow(halfRadius, 2));
                         }
 
                         RelativeLocation reloc = new RelativeLocation(row, col);
@@ -471,8 +486,8 @@ namespace Landis.Extension.BaseBDA
 
         private static IEnumerable<RelativeLocation> GetDispersalNeighborhood(IAgent agent, int timestep)
         {
-            double CellLength = PlugIn.ModelCore.CellLength;
-            PlugIn.ModelCore.UI.WriteLine("Creating Dispersal Neighborhood List.");
+            double CellLength = ModelCore.CellLength;
+            ModelCore.UI.WriteLine("Creating Dispersal Neighborhood List.");
 
             List<RelativeLocation> neighborhood = new List<RelativeLocation>();
 
@@ -492,18 +507,16 @@ namespace Landis.Extension.BaseBDA
             {
                 int neighborRadius = agent.DispersalRate * timestep;
                 int numCellRadius = (int) (neighborRadius / CellLength);
-                PlugIn.ModelCore.UI.WriteLine("NeighborRadius={0}, CellLength={1}, numCellRadius={2}",
+                ModelCore.UI.WriteLine("NeighborRadius={0}, CellLength={1}, numCellRadius={2}",
                         neighborRadius, CellLength, numCellRadius);
-                double centroidDistance = 0;
-                double cellLength = CellLength;
 
                 for(int row=(numCellRadius * -1); row<=numCellRadius; row++)
                 {
                     for(int col=(numCellRadius * -1); col<=numCellRadius; col++)
                     {
-                        centroidDistance = DistanceFromCenter(row, col);
+                        double centroidDistance = DistanceFromCenter(row, col);
 
-                        //PlugIn.ModelCore.Log.WriteLine("Centroid Distance = {0}.", centroidDistance);
+                        //ModelCore.Log.WriteLine("Centroid Distance = {0}.", centroidDistance);
                         if(centroidDistance  <= neighborRadius)
                         {
                             neighborhood.Add(new RelativeLocation(row,  col));
@@ -519,12 +532,12 @@ namespace Landis.Extension.BaseBDA
         //point (row and column = 0).
         private static double DistanceFromCenter(double row, double column)
         {
-            double CellLength = PlugIn.ModelCore.CellLength;
-            row = System.Math.Abs(row) * CellLength;
-            column = System.Math.Abs(column) * CellLength;
-            double aSq = System.Math.Pow(column,2);
-            double bSq = System.Math.Pow(row,2);
-            return System.Math.Sqrt(aSq + bSq);
+            double CellLength = ModelCore.CellLength;
+            row = Math.Abs(row) * CellLength;
+            column = Math.Abs(column) * CellLength;
+            double aSq = Math.Pow(column,2);
+            double bSq = Math.Pow(row,2);
+            return Math.Sqrt(aSq + bSq);
         }
 
 
@@ -590,7 +603,5 @@ namespace Landis.Extension.BaseBDA
             return neighbors;
 
         }
-
     }
-
 }

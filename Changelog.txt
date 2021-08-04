@@ -1,0 +1,20 @@
+This files contains list of custom changes implemented for the SOSIEL-involved simulations.
+
+* MAR-15-2021 Additional log
+
+Currently, BDA's log file includes: 
+- year
+- initiation cell coordinates
+- total event size (number of sites)
+- number of damaged sites
+- number of cohorts killed total
+- mean BDA severity across all sites
+
+Every cohort in the Biomass Succession extension is defined by age and species.
+Can you have the log file also output the "total biomass" of the cohorts killed
+by species for every infestation event?
+Note: This modification will not need to be merged into BDA's GitHub repository.
+
+* MAR-15-2021 Fix log directory creation.
+
+Fixed log directory creation.

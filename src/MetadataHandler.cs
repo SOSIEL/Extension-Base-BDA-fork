@@ -4,10 +4,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-//using System.Text;
+using System.Diagnostics;
+
 using Landis.Library.Metadata;
-using Landis.Utilities;
 using Landis.Core;
 
 namespace Landis.Extension.BaseBDA
@@ -49,6 +48,7 @@ namespace Landis.Extension.BaseBDA
             {
                 System.IO.Directory.CreateDirectory(logDir);
             }
+
             PlugIn.EventLog = new MetadataTable<EventsLog>(logFileName);
 
             OutputMetadata tblOut_events = new OutputMetadata()
@@ -73,8 +73,8 @@ namespace Landis.Extension.BaseBDA
             //Extension.OutputMetadatas.Add(tblOut_PDSI);
 
 
-            //---------------------------------------            
-            //          map outputs:         
+            //---------------------------------------
+            //          map outputs:
             //---------------------------------------
 
             foreach (IAgent activeAgent in manyAgentParameters)
@@ -84,7 +84,7 @@ namespace Landis.Extension.BaseBDA
                 OutputMetadata mapOut_Severity = new OutputMetadata()
                 {
                     Type = OutputType.Map,
-                    Name = System.String.Format(activeAgent.AgentName + " Outbreak Severity"),
+                    Name = string.Format(activeAgent.AgentName + " Outbreak Severity"),
                     FilePath = @mapTypePath,
                     Map_DataType = MapDataType.Ordinal,
                     Map_Unit = FieldUnits.Severity_Rank,
@@ -122,13 +122,9 @@ namespace Landis.Extension.BaseBDA
                     Extension.OutputMetadatas.Add(mapOut_NRD);
                 }
             }
-            //---------------------------------------
+
             MetadataProvider mp = new MetadataProvider(Extension);
             mp.WriteMetadataToXMLFile("Metadata", Extension.Name, Extension.Name);
-
-
-
-
         }
     }
 }

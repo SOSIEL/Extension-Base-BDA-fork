@@ -2,6 +2,7 @@
 //  Authors:  Robert M. Scheller,   James B. Domingo
 
 using System.Collections.Generic;
+
 using Landis.Utilities;
 
 namespace Landis.Extension.BaseBDA
@@ -14,38 +15,40 @@ namespace Landis.Extension.BaseBDA
         /// <summary>
         /// Timestep (years)
         /// </summary>
-        int Timestep {get;set;}
-        //---------------------------------------------------------------------
+        int Timestep { get; set; }
+
         /// <summary>
         /// Template for the filenames for output maps.
         /// </summary>
-        string MapNamesTemplate{get;set;}
-        //---------------------------------------------------------------------
+        string MapNamesTemplate { get; set; }
+
         /// <summary>
         /// Template for the filenames for output SRD maps.
         /// </summary>
-        string SRDMapNames{get;set;}
-        //---------------------------------------------------------------------
+        string SRDMapNames { get; set; }
+
         /// <summary>
         /// Template for the filenames for output SRD maps.
         /// </summary>
-        string NRDMapNames{get;set;}
-        //---------------------------------------------------------------------
+        string NRDMapNames { get; set; }
+
         /// <summary>
         /// Template for the filenames for output Vulnerabilty maps.
         /// </summary>
         string BDPMapNames { get; set; }
-        //---------------------------------------------------------------------
+
         /// <summary>
         /// Name of log file.
         /// </summary>
-        string LogFileName{get;set;}
+        string LogFileName { get; set; }
 
-        //---------------------------------------------------------------------
+        /// List of selected management areas
+        uint[] SelectedManagementAreas { get; set; }
+
         /// <summary>
         /// List of Agent Files
         /// </summary>
-        IEnumerable<IAgent> ManyAgentParameters{get;set;}
+        IEnumerable<IAgent> ManyAgentParameters { get; set; }
     }
 }
 
@@ -54,8 +57,7 @@ namespace Landis.Extension.BaseBDA
     /// <summary>
     /// Parameters for the plug-in.
     /// </summary>
-    public class InputParameters
-        : IInputParameters
+    public class InputParameters : IInputParameters
     {
         private int timestep;
         private string mapNamesTemplate;
@@ -63,6 +65,7 @@ namespace Landis.Extension.BaseBDA
         private string nrdMapNames;
         private string bdpMapNames;
         private string logFileName;
+        private uint[] selectedManagementAreas;
         private IEnumerable<IAgent> manyAgentParameters;
 
         //---------------------------------------------------------------------
@@ -71,33 +74,37 @@ namespace Landis.Extension.BaseBDA
         /// </summary>
         public int Timestep
         {
-            get {
+            get
+            {
                 return timestep;
             }
-            set {
+            set
+            {
                 if (value < 0)
-                        throw new InputValueException(value.ToString(),
-                                                      "Value must be = or > 0.");
+                {
+                    throw new InputValueException(value.ToString(),
+                                                  "Value must be = or > 0.");
+                }
                 timestep = value;
             }
         }
 
-        //---------------------------------------------------------------------
         /// <summary>
         /// Template for the filenames for output maps.
         /// </summary>
         public string MapNamesTemplate
         {
-            get {
+            get
+            {
                 return mapNamesTemplate;
             }
-            set {
+            set
+            {
                 MapNames.CheckTemplateVars(value);
                 mapNamesTemplate = value;
             }
         }
 
-        //---------------------------------------------------------------------
         /// <summary>
         /// Template for the filenames for SRD output maps.
         /// </summary>
@@ -114,7 +121,6 @@ namespace Landis.Extension.BaseBDA
             }
         }
 
-        //---------------------------------------------------------------------
         /// <summary>
         /// Template for the filenames for NRD output maps.
         /// </summary>
@@ -130,7 +136,7 @@ namespace Landis.Extension.BaseBDA
                 nrdMapNames = value;
             }
         }
-        //---------------------------------------------------------------------
+
         /// <summary>
         /// Template for the filenames for Vulnerability output maps.
         /// </summary>
@@ -146,39 +152,51 @@ namespace Landis.Extension.BaseBDA
                 bdpMapNames = value;
             }
         }
-        //---------------------------------------------------------------------
+
         /// <summary>
         /// Name of log file.
         /// </summary>
         public string LogFileName
         {
-            get {
+            get
+            {
                 return logFileName;
             }
-            set {
-                    // FIXME: check for null or empty path (value.Actual);
+            set
+            {
+                // FIXME: check for null or empty path (value.Actual);
                 logFileName = value;
             }
         }
 
-        //---------------------------------------------------------------------
+        /// <summary>
+        /// List of selected management areas to output info about.
+        /// </summary>
+        public uint[] SelectedManagementAreas
+        {
+            get
+            {
+                return selectedManagementAreas;
+            }
+            set
+            {
+                selectedManagementAreas = value;
+            }
+        }
+
         /// <summary>
         /// List of Agent Files
         /// </summary>
         public IEnumerable<IAgent> ManyAgentParameters
         {
-            get {
+            get
+            {
                 return manyAgentParameters;
             }
-            set {
+            set
+            {
                 manyAgentParameters = value;
             }
         }
-
-        //---------------------------------------------------------------------
-        public InputParameters()
-        {
-        }
-       
     }
 }

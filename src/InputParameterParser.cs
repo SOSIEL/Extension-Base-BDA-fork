@@ -1,10 +1,11 @@
 //  Copyright 2005-2010 Portland State University, University of Wisconsin
 //  Authors:  Robert M. Scheller,   James B. Domingo
 
+using System.Collections.Generic;
+using System.Linq;
+
 using Landis.Core;
 using Landis.Utilities;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Landis.Extension.BaseBDA
 {
@@ -14,28 +15,16 @@ namespace Landis.Extension.BaseBDA
     public class InputParameterParser
         : TextParser<IInputParameters>
     {
-        public static IEcoregionDataset EcoregionsDataset = null;
-
-        //---------------------------------------------------------------------
         public override string LandisDataValue
         {
             get
             {
                 return PlugIn.ExtensionName;
             }
-
         }
-
-        //---------------------------------------------------------------------
-        public InputParameterParser()
-        {
-        }
-
-        //---------------------------------------------------------------------
 
         protected override IInputParameters Parse()
         {
-
             InputVar<string> landisData = new InputVar<string>("LandisData");
             ReadVar(landisData);
             if (landisData.Value.Actual != PlugIn.ExtensionName)
@@ -57,58 +46,25 @@ namespace Landis.Extension.BaseBDA
             InputVar<string> srdMapNames = new InputVar<string>("SRDMapNames");
             if(ReadOptionalVar(srdMapNames))
                 parameters.SRDMapNames = srdMapNames.Value;
-            /*try
-            {
-                ReadVar(srdMapNames);
-                parameters.SRDMapNames = srdMapNames.Value;
-            }
-            catch (LineReaderException errString)
-            {
-                if (!((errString.MultiLineMessage[1].Contains("Found the name \"LogFile\" but expected \"SRDMapNames\"")) || (errString.MultiLineMessage[1].Contains("Found the name \"NRDMapNames\" but expected \"SRDMapNames\""))))
-                {
-                    throw errString;
-                }
 
-            }
-            */
             InputVar<string> nrdMapNames = new InputVar<string>("NRDMapNames");
             if(ReadOptionalVar(nrdMapNames))
                 parameters.NRDMapNames = nrdMapNames.Value;
-            /*try
-            {
-                ReadVar(nrdMapNames);
-                parameters.NRDMapNames = nrdMapNames.Value;
-            }
-            catch (LineReaderException errString)
-            {
-                if (!(errString.MultiLineMessage[1].Contains("Found the name \"VulnMapNames\" but expected \"NRDMapNames\"")))
-                {
-                    throw errString;
-                }
 
-            }
-             * */
             InputVar<string> bdpMapNames = new InputVar<string>("BDPMapNames");
             if(ReadOptionalVar(bdpMapNames))
                 parameters.BDPMapNames = bdpMapNames.Value;
-            /*try
-            {
-                ReadVar(bdpMapNames);
-                parameters.BDPMapNames = bdpMapNames.Value;
-            }
-            catch (LineReaderException errString)
-            {
-                if (!(errString.MultiLineMessage[1].Contains("Found the name \"LogFile\" but expected \"VulnMapNames\"")))
-                {
-                    throw errString;
-                }
-
-            }
-            */
 
             InputVar<string> logFile = new InputVar<string>("LogFile");
             ReadVar(logFile);
             parameters.LogFileName = logFile.Value;
+
+            InputVar<string> selectedManagementAreas = new InputVar<string>("SelectedManagementAreas");
+            if (ReadOptionalVar(selectedManagementAreas))
+            {
+                var selectedMAStrings = selectedManagementAreas.Value.String.Trim().Split(',');
+                parameters.SelectedManagementAreas = selectedMAStrings.Select(s => uint.Parse(s.Trim())).ToArray();
+            }
 
             //----------------------------------------------------------
             // Last, read in Agent File names,
@@ -123,17 +79,13 @@ namespace Landis.Extension.BaseBDA
             IAgent agentParameters = Landis.Data.Load<IAgent>(agentFileName.Value, agentParser);
             agentParameterList.Add(agentParameters);
 
-            while (!AtEndOfInput) {
+            while (!AtEndOfInput)
+            {
                 StringReader currentLine = new StringReader(CurrentLine);
-
                 ReadValue(agentFileName, currentLine);
-
                 agentParameters = Landis.Data.Load<IAgent>(agentFileName.Value, agentParser);
-
                 agentParameterList.Add(agentParameters);
-
                 GetNextLine();
-
             }
 
             foreach(IAgent activeAgent in agentParameterList)
@@ -142,12 +94,10 @@ namespace Landis.Extension.BaseBDA
                     PlugIn.ModelCore.UI.WriteLine("PARSE:  Agent Parameters NOT loading correctly.");
                 else
                     PlugIn.ModelCore.UI.WriteLine("Name of Agent = {0}", agentParameters.AgentName);
-
             }
             parameters.ManyAgentParameters = agentParameterList;
 
-            return parameters; //.GetComplete();
-
+            return parameters;
         }
     }
 }
